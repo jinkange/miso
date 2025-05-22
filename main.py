@@ -8,6 +8,7 @@ try:
     import hashlib
     import shutil
     import subprocess
+    from skimage.metrics import structural_similarity as ssim
 except Exception as e:
     print(f"\n❌ 오류 발생: {e}")
     input("\n🔚 프로그램을 종료하려면 Enter 키를 누르세요.")
@@ -27,8 +28,21 @@ if not os.path.exists(r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
 TARGET_CLICK_RATIO = (0.534, 0.16)  # 화면의 가로 50%, 세로 90%
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 def take_screenshot(save_as=SCREENSHOT_PATH):
-    os.system("adb shell screencap -p /sdcard/screen.png")
-    os.system(f"adb pull /sdcard/screen.png {save_as}")
+    # os.system("adb shell screencap -p /sdcard/screen.png")
+    # os.system(f"adb pull /sdcard/screen.png {save_as}")
+    # 로그 없이 명령 실행
+    subprocess.run("adb shell screencap -p /sdcard/screen.png", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run("adb pull /sdcard/screen.png", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def images_are_similar(img1_path, img2_path, threshold=0.92):
+    img1 = cv2.imread(img1_path, cv2.IMREAD_GRAYSCALE)
+    img2 = cv2.imread(img2_path, cv2.IMREAD_GRAYSCALE)
+    if img1.shape != img2.shape:
+        return False
+
+    score, _ = ssim(img1, img2, full=True)
+    print(score)
+    return score >= threshold
 
 def hash_image(image_path):
     with open(image_path, 'rb') as f:
@@ -172,26 +186,38 @@ def main():
 
         while scroll_count < max_scrolls:
             take_screenshot(SCREENSHOT_PATH)
+            
             prices = extract_prices(SCREENSHOT_PATH)
 
+            if find_and_click_text(SCREENSHOT_PATH, "노원구"):
+                time.sleep(2)
+                take_screenshot(SCREENSHOT_PATH)
+                find_and_click_text(SCREENSHOT_PATH, "견적제출")
+                take_screenshot(SCREENSHOT_PATH)
+                find_and_click_text(SCREENSHOT_PATH, "제출하기")
+                time.sleep(2)
+                os.system("adb shell input text '10000'")
+                
             if prices:
                 price, x, y = prices[0]
                 print(f"✅ {price}원 발견, 클릭 위치: ({x},{y})")
                 click(x + 50, y + 50)
                 # 나머지 작업
-                find_and_click_text(SCREENSHOT_PATH, "동두천시")
+                
                 click_relative(*TARGET_CLICK_RATIO)
                 break
 
             # 계속 스크롤
             print(f"🔄 조건 불충족. 스크롤 {scroll_count + 1}/{max_scrolls}")
+            
             scroll_down_slow()
+            
             scroll_count += 1
-            time.sleep(0.1)
+            
             take_screenshot(PREVIOUS_SCREENSHOT_PATH)
 
             # 이전 화면과 동일하면 비례 좌표 클릭
-            if images_are_same(SCREENSHOT_PATH, PREVIOUS_SCREENSHOT_PATH):
+            if images_are_similar(SCREENSHOT_PATH, PREVIOUS_SCREENSHOT_PATH):
                 print("🔁 이전 화면과 동일: 더 이상 스크롤되지 않음")
                 click_relative(*TARGET_CLICK_RATIO)
                 break
